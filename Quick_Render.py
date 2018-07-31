@@ -67,10 +67,10 @@ runfolders = [#'Poly_N100000_M0003_R003_n15/',
 
 ]
 
-
-snap = 0
 savedir = '/scratch/r/rjh73/save_data/'
 
+
+#======== General plotting parameters ========#
 ngrid    = int(1024) #use powers of two!
 XYdim    = 1.2#2.#1#.3.2#1.5
 XYdim_zoom = 0.04#0.1#0.04
@@ -94,6 +94,8 @@ test_args = ['Gas','gas','magma',[1e-3,1e1],[1e-2,1e6],'Sigma']
 
 grain_size = 1 #cm
 grain_rho = 3 #g/cm^-3
+
+
 
 
 #======== Miscellaneous functions ========#
@@ -129,11 +131,6 @@ def grain_stringify(run_name):
         a = '-'
     return a
 
-
-
-
-
-
 def res_hists(xs,ys,sph_h,sph_u,M_star,MP,planet_p,it,time):
     '''Produce histograms of smoothing length ratios'''
     xs,ys = xs*code_L,ys*code_L                    #cm
@@ -168,6 +165,11 @@ def res_hists(xs,ys,sph_h,sph_u,M_star,MP,planet_p,it,time):
     return
 
 
+
+
+
+#==================== Rendering Code ===================#
+#=======================================================#
 
 
 def grid_render(R_pos,R_vel,R_A,R_rho,ngrid,box_lim):
@@ -241,11 +243,11 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
     print 'boxlim', box_lim*AU_scale, 'AU'
     S.subsample(box_lim)
 
-
     
-    #####============ SPH Rendering ============#####
+    #####=============== SPH Rendering =============#####
     if hist2D == False:
-        #==== Choose gas or dust for render ====#
+        
+        #========== Choose gas or dust for render ========#
         print 'P type', p_type
         if p_type == 'gas':
             R_pos,R_vel,R_h,R_A,R_rho = S.gas_pos,S.gas_vel,S.gas_h,S.gas_u,S.gas_rho
@@ -260,10 +262,11 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
             M_R = S.M_gas
         
 
-        #==============================#
+        #========= Run render code ==========#
         print '#==== Begin Render! ====#'       
         if render_mode == 'Sigma':            
-            render_output = pyjack.smoother(R_pos[:,0],R_pos[:,1],R_h,R_A,R_vel[:,0],R_vel[:,1],ngrid,-1*box_lim,box_lim,4,M_R)
+            render_output = pyjack.smoother(R_pos[:,0],R_pos[:,1],R_h,R_A,R_vel[:,0],R_vel[:,1],
+                                            ngrid,-1*box_lim,box_lim,4,M_R)
 
             rendered  = render_output[:ngrid**2].reshape((ngrid,ngrid))
             rendered  = np.nan_to_num(rendered)
@@ -285,12 +288,20 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
         print '\n#==== End Render! ====#'
         
             
-    #Hist 2D result    
+    #======== Hist 2D result ========#  
     else:
         rendered,xedges,yedges = np.histogram2d(R_pos[:,0],R_pos[:,1],ngrid,range=[[-1*box_lim,box_lim],[-1*box_lim,box_lim]])
         rendered = rendered * M_R /(2*XYdim/ngrid)**2
         A_output = rendered*0
 
+    #============ Store render output ========#
+    store[0,1:,:] = rendered    
+    store[1,1:,:] = A_output
+    store[2,1:,:] = vx_output
+    store[3,1:,:] = vy_output
+
+    
+    #============ Store planet information =========#
     print 'Planets: ', S.planets_pos, np.shape(S.planets_pos)
     store = np.zeros((4,ngrid+1,ngrid))   
     store[0,0,0] = S.M_star
@@ -304,11 +315,6 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
     except:
         print 'Might be too many planets!'
         store[0,0,1] = int((ngrid-2)/4)
-        
-    store[0,1:,:] = rendered    
-    store[1,1:,:] = A_output
-    store[2,1:,:] = vx_output
-    store[3,1:,:] = vy_output
 
 
     print 'Frame time: ', (time.time()-time0)
@@ -316,7 +322,8 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
         
 
 
-    
+#============================= Plotting functions =====================================#    
+#======================================================================================#
 
 def array_dust_overlay(render,dust_pos,box_lim):
     '''Update rendered pictures to include dust pixels'''    
@@ -366,19 +373,22 @@ def calc_temp(u,Om_K,Sigma,render_mode):
 
 
 
-
-
-def render_SPH(runfolder,args=gas_args,snapprefix='snapshot_',snap=-1,inc=0,azi=0,inc2=0,render_mode='Sigma',vel_field=False,
-               upto=0,zoom=False,polyzoom=False,overlay=False,write=False,dpi=1000,h_hist=False,it=0,rerun=False,
-               amin=0,amax=0):
+def render_SPH(runfolder,args=gas_args,snapprefix='snapshot_',snap=-1,
+               inc=0,azi=0,inc2=0,render_mode='Sigma',vel_field=False,
+               upto=0,zoom=False,polyzoom=False,overlay=False,write=False,
+               dpi=1000,h_hist=False,it=0,rerun=False,amin=0,amax=0):
     
     '''Make rendered animation or single image of an SPH plot. Option to save.
     field_mode: Sigma - Surface Density [gcm^{-2}]
                 tau   - Dimensionless stopping time []
                 Q     - Toomre Q parameter []
     set snap to find snapshot. snap=-1 -> movie
-    If inc=/= 0 or 180, plot rho instead of Sigma
-    overlay = 'None', 'Grid', 'Scatter'
+    If inc != 0 or 180, plot rho instead of Sigma
+    overlay   - pixellated overlay of dust particles. Scatter too expensive.
+    vel_field - overlay of render data velocity structure
+    zoom      - zooms on first planet
+    polyzoom  - zooms on max rho SPH particles
+    upto      - limits movie frames
     '''
     
     #==== Load Arguments ====#
