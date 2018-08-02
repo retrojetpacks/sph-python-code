@@ -62,7 +62,7 @@ runfolders = [#'Poly_N100000_M0003_R003_n15/',
     #'Polydisc_N16e5_M5_R3_r50_b5_g75_MD001_Z10_a1_df01_MP3e-06_2/',
     #'Polydisc_N16e5_M5_R3_r50_b5_g75_MD001_Z10_a10_df01_MP3e-06/',
     #'Pd_N16e5_M5_R3_r50_b5_g75_MD001_Z10_a1_df01_MP3e-06/',
-    'Polydisc_N16e5_M5_R3_r50_b5_g75_MD001_Z10_a10_df01_MP3e-06_bf1/'
+    'Pd_N16e5_M5_R3_r50_b5_g75_MD001_Z10_a10_df01_MP3e-06_bf01/'
 
 
 ]
@@ -72,7 +72,7 @@ savedir = '/scratch/r/rjh73/save_data/'
 
 #======== General plotting parameters ========#
 ngrid    = int(1024) #use powers of two!
-XYdim    = 1.2#2.#1#.3.2#1.5
+XYdim    = 0.6#2.#1#.3.2#1.5
 XYdim_zoom = 0.04#0.1#0.04
 dust_Neighbours = 40
 rho_Neighbours = 40
@@ -212,7 +212,8 @@ def grid_render(R_pos,R_vel,R_A,R_rho,ngrid,box_lim):
 
 
 def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
-           render_mode='Sigma',zoom=False,polyzoom=False,overlay=False,hist2D=False,h_hist=False,it=0):
+           render_mode='Sigma',zoom=False,polyzoom=False,overlay=False,
+           track_IDs=[],hist2D=False,h_hist=False,it=0):
     '''Load SPH info and call C rendering routine.
     p_type = gas, dust'''
     
@@ -242,6 +243,9 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
     #=== Subsample to reduce cost ====#
     print 'boxlim', box_lim*AU_scale, 'AU'
     S.subsample(box_lim)
+
+    print 'ISIN mask', np.isin(S.gas_ID,track_IDs)
+    #track_pos =
 
     
     #####=============== SPH Rendering =============#####
@@ -295,6 +299,7 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
         A_output = rendered*0
 
     #============ Store render output ========#
+    store = np.zeros((4,ngrid+1,ngrid))   
     store[0,1:,:] = rendered    
     store[1,1:,:] = A_output
     store[2,1:,:] = vx_output
@@ -303,7 +308,6 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
     
     #============ Store planet information =========#
     print 'Planets: ', S.planets_pos, np.shape(S.planets_pos)
-    store = np.zeros((4,ngrid+1,ngrid))   
     store[0,0,0] = S.M_star
     store[0,0,1] = S.N_planets
     try:
@@ -318,7 +322,7 @@ def render(runfolder,snapprefix,snapid=0,p_type='gas',inc=0,azi=0,inc2=0,
 
 
     print 'Frame time: ', (time.time()-time0)
-    return store, S.dust_pos
+    return store, S.dust_pos, track_pos
         
 
 
@@ -373,10 +377,32 @@ def calc_temp(u,Om_K,Sigma,render_mode):
 
 
 
+def ID_selection(runfolder,snapprefix,zoom='planet',track_R=3):
+    '''Track gas particles that are initially close to the planet'''  
+    S = b.Load_Snap(filepath,runfolder,snapid=0)
+
+    
+    if zoom == 'poly':
+        zoom_pos = S.max_rho()
+    elif zoom == 'planet':
+        zoom_pos = S.planets_pos[0]
+
+    S.gas_pos -= zoom_pos
+    gas_R = np.sqrt(S.gas_pos[:,0]**2+S.gas_pos[:,1]**2+S.gas_pos[:,2]**2)
+    track_IDs = S.gas_ID[gas_R<track_R/AU_scale]
+
+    print 'TRACK IDS', track_IDs
+
+    return track_IDs
+
+
+    
+
+
 def render_SPH(runfolder,args=gas_args,snapprefix='snapshot_',snap=-1,
                inc=0,azi=0,inc2=0,render_mode='Sigma',vel_field=False,
                upto=0,zoom=False,polyzoom=False,overlay=False,write=False,
-               dpi=1000,h_hist=False,it=0,rerun=False,amin=0,amax=0):
+               dpi=1000,h_hist=False,it=0,rerun=False,amin=0,amax=0,tracking=True,track_R=3):
     
     '''Make rendered animation or single image of an SPH plot. Option to save.
     field_mode: Sigma - Surface Density [gcm^{-2}]
@@ -389,6 +415,7 @@ def render_SPH(runfolder,args=gas_args,snapprefix='snapshot_',snap=-1,
     zoom      - zooms on first planet
     polyzoom  - zooms on max rho SPH particles
     upto      - limits movie frames
+    tracking  - track gas particles that are initially close to the planet
     '''
     
     #==== Load Arguments ====#
@@ -446,7 +473,12 @@ def render_SPH(runfolder,args=gas_args,snapprefix='snapshot_',snap=-1,
     else:
         num_snaps = 1
         snapids = [snap]
-        
+
+
+    if tracking == True:
+        track_IDs = ID_selection(runfolder,snapprefix=snapprefix,track_R=track_R,zoom='planet')
+    else:
+        track_IDs = []
 
     #----------- Load saved files or rerun rendering routine ----------#
     try:
@@ -465,7 +497,7 @@ def render_SPH(runfolder,args=gas_args,snapprefix='snapshot_',snap=-1,
             print 'i',idn
             store,dust_store   = render(runfolder,snapprefix=snapprefix,snapid=idn,p_type=p_type,
                                         inc=inc,azi=azi,inc2=inc2,
-                                        render_mode=render_mode,zoom=zoom,
+                                        render_mode=render_mode,zoom=zoom,track_IDs=track_IDs,
                                         polyzoom=polyzoom,overlay=overlay,h_hist=h_hist,it=it)
             save_array[i,0,0,:]  = store[0,0,:]                      #Header info
             save_array[i,0,1:,:] = store[0,1:,:] * code_M / code_L**2        #Sigma [g/cm^2]
@@ -641,12 +673,16 @@ if __name__ == "__main__":
 
     #Movies
     #render_SPH(runfolders[fol],gas_args,snap=-1,inc=0,write=False,overlay=True,polyzoom=False,it=1,rerun=False,vel_field=True)
-    #render_SPH(runfolders[fol],gas_args,snap=-1,inc=0,write=False,overlay=True,polyzoom=True,it=1,rerun=True,vel_field=True,upto=5)
+    #render_SPH(runfolders[fol],gas_args,snap=-1,inc=0,write=False,overlay=True,zoom=True,it=1,rerun=True,vel_field=True)    
+    #render_SPH(runfolders[fol],temp_args,snap=-1,inc=0,write=False,overlay=True,zoom=True,it=1,rerun=True,vel_field=True)
+
     #render_SPH(runfolders[fol],dust_args,snap=-1,inc=0,write=False,polyzoom=True,it=1,rerun=True,vel_field=True,upto=5)
+
+    render_SPH(runfolders[fol],gas_args,snap=-1,inc=0,write=False,overlay=True,zoom=False,it=1,rerun=True,vel_field=True)    
 
 
     #Rendered Images   
-    render_SPH(runfolders[fol],gas_args,snap=2,inc=0,polyzoom=True,overlay=True,write=False,it=2,vel_field=True)
+    #render_SPH(runfolders[fol],gas_args,snap=2,inc=0,polyzoom=True,overlay=True,write=False,it=2,vel_field=True)
    
 
 

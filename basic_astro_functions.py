@@ -328,8 +328,8 @@ def find_RH_2(M_star,M_gas,M_dust,gas_pos,dust_pos,frag_pos,M_sinks=0,sink_pos=[
 class Load_Snap:
     '''New snap reader. Uses classes and methods. All positions normalised to star'''
 
-    def __init__(self,filepath,runfolder,snapprefix='snapshot_',snapid='000'):
-        snapid          = str(snapid).zfill(3)
+    def __init__(self,filepath,runfolder,snapid='000',snapprefix='snapshot_',):
+        snapid          = str(snapid).zfill(3)        
         print filepath+runfolder+snapprefix+snapid
         self.headertime = readheader(filepath+runfolder+snapprefix+snapid,'time')* code_time /c.sec_per_year #Years
         self.N_gas      = readheader(filepath+runfolder+snapprefix+snapid,'gascount')
@@ -589,7 +589,7 @@ def bin_data_save(filepath,runfolder,Rin,Rout,vr_mode=False,zoom='',Poly_data=Fa
         
         #==== Save planet positions ====#
         if S.N_planets != 0:
-            R_planets = np.sqrt(S.pos_planets[:,0]**2 + S.pos_planets[:,1]**2 + S.pos_planets[:,2]**2)
+            R_planets = np.sqrt(S.planets_pos[:,0]**2 + S.planets_pos[:,1]**2 + S.planets_pos[:,2]**2)
 
             #Sort by planet mass. Not ideal but useful
             massinds = np.argsort(-S.M_planets)
@@ -609,7 +609,7 @@ def bin_data_save(filepath,runfolder,Rin,Rout,vr_mode=False,zoom='',Poly_data=Fa
             rho_sort  = np.argsort(S.gas_rho)
             frag_pos  = np.mean(S.gas_pos[rho_sort[-10:],:],axis=0)
             a_frag, RH_2, M_frag, Macc_dust,Mint_sinks = find_RH_2(S.M_star,S.M_gas,S.M_dust,S.gas_pos,S.dust_pos,
-                                                                   frag_pos,M_sinks=S.M_planets,sink_pos=S.pos_planets)
+                                                                   frag_pos,M_sinks=S.M_planets,sink_pos=S.planets_pos)
             save_array[snapid+1,0,21] = M_frag
             save_array[snapid+1,0,22] = a_frag
             save_array[snapid+1,0,23] = RH_2
